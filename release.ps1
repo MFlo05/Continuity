@@ -62,9 +62,13 @@ Step "Bumping version to $Version"
 
 foreach ($file in @('manifest.json', 'package.json')) {
     $raw = Get-Content $file -Raw
+    # Test for a match rather than for a change: re-releasing the version the
+    # file already carries is legitimate (it's how the first release works),
+    # and a value-unchanged rewrite must not read as "field not found".
+    $rx = [regex]'("version"\s*:\s*")[^"]*(")'
+    if (-not $rx.IsMatch($raw)) { throw "Could not find a version field in $file" }
     # Replace only the first "version" field (top level in both files).
-    $new = [regex]::Replace($raw, '("version"\s*:\s*")[^"]*(")', "`${1}$Version`${2}", 1)
-    if ($new -eq $raw) { throw "Could not find a version field in $file" }
+    $new = $rx.Replace($raw, "`${1}$Version`${2}", 1)
     # No BOM -- Obsidian's JSON parser chokes on it.
     [System.IO.File]::WriteAllText((Join-Path $PSScriptRoot $file), $new, (New-Object System.Text.UTF8Encoding $false))
     Write-Host "  $file -> $Version" -ForegroundColor Green

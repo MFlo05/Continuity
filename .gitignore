@@ -1,0 +1,18 @@
+# Dependencies — reinstalled with `npm install`, never committed
+node_modules/
+
+# Personal plugin data. Contains Google OAuth tokens, per-device client
+# credentials, and your real dashboard contents. Must never be committed.
+# The glob covers backups and editor temp copies too -- a data.json.bak is
+# every bit as sensitive as the original, and slipped through a bare rule once.
+data.json
+data.json.*
+*.bak
+
+# Design mockup archives — scratch files, not part of the plugin
+*.zip
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,9 @@
+{
+  "id": "continuity",
+  "name": "Continuity",
+  "version": "0.1.1",
+  "minAppVersion": "1.4.0",
+  "description": "Personal dashboard with a drag-and-drop widget grid.",
+  "author": "Mason",
+  "isDesktopOnly": false
+}

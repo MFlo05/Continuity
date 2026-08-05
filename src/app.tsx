@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { App, Menu, FileSystemAdapter } from 'obsidian';
+import { App, Menu, FileSystemAdapter, Platform } from 'obsidian';
 import type { PageLayout, LayoutItem, WidgetType, MITState } from './types';
 import { widgetRegistry } from './widgets/registry';
 import { GridPage } from './grid/GridPage';
@@ -135,6 +135,11 @@ export function App({ app, initialPages, initialMitTasks, tokenStore, aiDataStor
   const [dragOverPageId, setDragOverPageId] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+
+  // Phone only: the floating top bar yields its space once you scroll into the
+  // page. On a 390px-wide screen the 56px bar is real estate the content wants.
+  const [topbarHidden, setTopbarHidden] = useState(false);
 
   const activePage = pages.find(p => p.id === activePageId) ?? pages[0];
 
@@ -142,14 +147,64 @@ export function App({ app, initialPages, initialMitTasks, tokenStore, aiDataStor
     if (renamingPageId) { renameInputRef.current?.focus(); renameInputRef.current?.select(); }
   }, [renamingPageId]);
 
+  // Hide-on-scroll-down, reveal-on-scroll-up.
+  //
+  // The scroll container is .cc2-grid-wrapper, which GridPage owns and rebuilds
+  // per page, while the top bar lives here. Rather than thread a callback down
+  // through a memoized component and re-subscribe on every page change, listen
+  // on the stage in the CAPTURE phase — scroll events don't bubble, but they do
+  // propagate downward through capture, so this catches whichever wrapper is
+  // currently mounted.
+  useEffect(() => {
+    if (!Platform.isPhone) return;
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    let lastY = 0;
+
+    const onScroll = (e: Event) => {
+      const el = e.target as HTMLElement | null;
+      if (!el?.classList?.contains('cc2-grid-wrapper')) return;
+
+      const y = el.scrollTop;
+      // Near the top the bar is always available, so the page never opens with
+      // its own navigation hidden.
+      if (y < 48) { setTopbarHidden(false); lastY = y; return; }
+
+      // A threshold, not a raw comparison: iOS momentum scrolling jitters by a
+      // pixel or two at the end of a fling, and an unguarded check turns that
+      // into a visible flicker.
+      const delta = y - lastY;
+      if (Math.abs(delta) < 8) return;
+      setTopbarHidden(delta > 0);
+      lastY = y;
+    };
+
+    stage.addEventListener('scroll', onScroll, true);
+    return () => stage.removeEventListener('scroll', onScroll, true);
+  }, []);
+
   const persistPages = useCallback((updated: PageLayout[]) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => savePages(updated), 500);
   }, [savePages]);
 
+  // GridPage always reports the geometry the live grid is holding. Where that
+  // gets stored depends on which grid it is: a phone is arranging its own
+  // 6-column layout, and writing those coordinates into `items` would collapse
+  // the 12-column desktop dashboard into its left half the next time the vault
+  // synced. Only placement is device-specific — the widget set and its config
+  // stay single-sourced in `items` for every device.
   const handleLayoutChange = useCallback((items: LayoutItem[]) => {
     setPages(prev => {
-      const next = prev.map(p => p.id === activePageId ? { ...p, items } : p);
+      const next = prev.map(p => {
+        if (p.id !== activePageId) return p;
+        if (!Platform.isPhone) return { ...p, items };
+        return {
+          ...p,
+          mobilePlacements: items.map(({ id, x, y, w, h }) => ({ id, x, y, w, h })),
+        };
+      });
       persistPages(next);
       return next;
     });
@@ -158,7 +213,16 @@ export function App({ app, initialPages, initialMitTasks, tokenStore, aiDataStor
   const handleRemoveWidget = useCallback((id: string) => {
     setPages(prev => {
       const next = prev.map(p =>
-        p.id === activePageId ? { ...p, items: p.items.filter(i => i.id !== id) } : p
+        p.id === activePageId
+          ? {
+              ...p,
+              items: p.items.filter(i => i.id !== id),
+              // Drop the phone placement too. Harmless if left (resolveGeometry
+              // only reads placements for items that still exist) but it would
+              // accumulate in data.json for the life of the vault.
+              mobilePlacements: p.mobilePlacements?.filter(m => m.id !== id),
+            }
+          : p
       );
       persistPages(next);
       return next;
@@ -314,10 +378,19 @@ export function App({ app, initialPages, initialMitTasks, tokenStore, aiDataStor
       onMitChange={saveMitTasks}
     >
     <BudgetMonthProvider>
-      <div className="cc2-stage" onContextMenu={handleContextMenu}>
+      {/* cc2-stage--phone rather than Obsidian's own .is-phone body class:
+          the phone styles have to agree with the phone behaviour (6 columns,
+          scroll-to-hide, separate placements), and both are decided by
+          Platform.isPhone. Driving the CSS from the same call means they
+          cannot drift apart. */}
+      <div
+        className={'cc2-stage' + (Platform.isPhone ? ' cc2-stage--phone' : '')}
+        ref={stageRef}
+        onContextMenu={handleContextMenu}
+      >
 
         {/* ── Top bar ─────────────────────────────────────── */}
-        <div className="cc2-topbar">
+        <div className={'cc2-topbar' + (topbarHidden ? ' cc2-topbar--hidden' : '')}>
           <div className="cc2-tabs">
             {pages.map((p, i) => (
               <div

@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useCallback, memo } from 'react';
+import React, { useEffect, useMemo, useRef, useCallback, memo } from 'react';
 import { GridStack } from 'gridstack';
+import { Platform } from 'obsidian';
 import type { App } from 'obsidian';
 import type { LayoutItem, PageLayout } from '../types';
 import { widgetRegistry, type WidgetDefinition } from '../widgets/registry';
@@ -54,6 +55,57 @@ function getSourceInfo(
   return resolved ? badgeFor(app, resolved) : {};
 }
 
+// A phone gets 6 columns, everything else 12. Read once at module load and
+// never re-read: Platform.isPhone is a device fact, and holding the column
+// count constant is exactly what makes rotation lossless. Switching to 12 in
+// landscape would look identical (Gridstack scales coordinates proportionally)
+// while costing a persisted rewrite and a rounding error on every rotation.
+const IS_PHONE        = Platform.isPhone;
+const DESKTOP_COLUMNS = 12;
+const COLUMNS         = IS_PHONE ? 6 : DESKTOP_COLUMNS;
+const COLUMN_SCALE    = COLUMNS / DESKTOP_COLUMNS;
+
+/**
+ * Scales a registry minSize.w into the active grid.
+ *
+ * Widget minimums are authored against 12 columns, so a widget declaring
+ * minSize.w: 4 ("a third") would mean two-thirds of a 6-column phone grid and
+ * could never be made small enough to sit beside anything.
+ */
+function scaleMinW(w: number): number {
+  return Math.max(1, Math.round(w * COLUMN_SCALE));
+}
+
+/**
+ * The geometry each widget should mount with.
+ *
+ * Desktop uses `items` as authored. A phone overlays `mobilePlacements`, and
+ * seeds them on first visit by halving x and w — 12 to 6 is exactly
+ * proportional, so a half-width widget stays half-width and any side-by-side
+ * pair survives the trip. y and h carry over untouched; row height has nothing
+ * to do with column count.
+ *
+ * Widgets added on desktop since the last phone visit have no placement yet and
+ * fall through to the same halving, so they land somewhere sensible rather than
+ * stacking at the origin.
+ */
+function resolveGeometry(page: PageLayout): LayoutItem[] {
+  if (!IS_PHONE) return page.items;
+
+  const placed = new Map((page.mobilePlacements ?? []).map(p => [p.id, p]));
+
+  return page.items.map(item => {
+    const p = placed.get(item.id);
+    if (p) return { ...item, x: p.x, y: p.y, w: p.w, h: p.h };
+
+    return {
+      ...item,
+      x: Math.min(COLUMNS - 1, Math.round(item.x * COLUMN_SCALE)),
+      w: Math.max(1, Math.min(COLUMNS, Math.round(item.w * COLUMN_SCALE))),
+    };
+  });
+}
+
 interface GridPageProps {
   page: PageLayout;
   editMode: boolean;
@@ -103,7 +155,7 @@ const GridItem = memo(function GridItem({
       gs-y={String(item.y)}
       gs-w={String(item.w)}
       gs-h={String(item.h)}
-      gs-min-w={String(def?.minSize.w ?? 2)}
+      gs-min-w={String(scaleMinW(def?.minSize.w ?? 2))}
       gs-min-h={String(def?.minSize.h ?? 2)}
     >
       <div className="grid-stack-item-content">
@@ -130,13 +182,25 @@ const GridItem = memo(function GridItem({
 export function GridPage({ page, editMode, app, onLayoutChange, onRemoveWidget, onConfigChange, showNavSpacer = true }: GridPageProps) {
   const containerRef  = useRef<HTMLDivElement>(null);
   const gridRef       = useRef<GridStack | null>(null);
-  // Stable ref so 'change' handler always sees current items without re-subscribing
-  const itemsRef      = useRef<LayoutItem[]>(page.items);
   // Track which item IDs Gridstack already owns (to detect newly added ones)
   const registeredIds = useRef(new Set<string>());
 
+  // What each widget mounts with: `items` on desktop, mobilePlacements-over-items
+  // on a phone. Everything downstream reads this rather than page.items, so the
+  // two devices never see each other's coordinates.
+  //
+  // Memoized because the effects below key off its identity — an array rebuilt
+  // every render would re-register widgets and re-fire compact() on each pass.
+  const items = useMemo(
+    () => resolveGeometry(page),
+    [page.items, page.mobilePlacements],
+  );
+
+  // Stable ref so 'change' handler always sees current items without re-subscribing
+  const itemsRef = useRef<LayoutItem[]>(items);
+
   // Keep itemsRef current — must run before the dynamic-registration effect below
-  useEffect(() => { itemsRef.current = page.items; }, [page.items]);
+  useEffect(() => { itemsRef.current = items; }, [items]);
 
   // Init grid once per page — re-runs only when navigating between pages
   useEffect(() => {
@@ -144,7 +208,7 @@ export function GridPage({ page, editMode, app, onLayoutChange, onRemoveWidget, 
 
     gridRef.current = GridStack.init(
       {
-        column:        12,
+        column:        COLUMNS,
         cellHeight:    80,
         animate:       true,
         float:         false,
@@ -158,7 +222,7 @@ export function GridPage({ page, editMode, app, onLayoutChange, onRemoveWidget, 
 
     // All items rendered by React on initial mount are now owned by Gridstack
     if (showNavSpacer) registeredIds.current.add('__nav-spacer__');
-    page.items.forEach(item => registeredIds.current.add(item.id));
+    itemsRef.current.forEach(item => registeredIds.current.add(item.id));
 
     // Belt-and-suspenders: a freshly-created class's default 7-widget layout
     // was observed rendering with the container's own measured height at
@@ -199,7 +263,7 @@ export function GridPage({ page, editMode, app, onLayoutChange, onRemoveWidget, 
   // first, then this effect fires and hands it to Gridstack for positioning.
   useEffect(() => {
     if (!gridRef.current || !containerRef.current) return;
-    const newItems = page.items.filter(i => !registeredIds.current.has(i.id));
+    const newItems = items.filter(i => !registeredIds.current.has(i.id));
     if (newItems.length === 0) return;
 
     newItems.forEach(item => {
@@ -210,7 +274,7 @@ export function GridPage({ page, editMode, app, onLayoutChange, onRemoveWidget, 
         id:           item.id,
         w:            item.w,
         h:            item.h,
-        minW:         def?.minSize.w,
+        minW:         def ? scaleMinW(def.minSize.w) : undefined,
         minH:         def?.minSize.h,
         autoPosition: true, // let Gridstack find the best empty spot
       });
@@ -221,7 +285,7 @@ export function GridPage({ page, editMode, app, onLayoutChange, onRemoveWidget, 
     // occupied, so if this path ever fires for items the engine already had
     // (see the init effect's own comment), this closes the gap it left.
     gridRef.current.compact();
-  }, [page.items]);
+  }, [items]);
 
   // Toggle drag/resize when editMode flips — no grid rebuild needed
   useEffect(() => {
@@ -247,10 +311,19 @@ export function GridPage({ page, editMode, app, onLayoutChange, onRemoveWidget, 
 
   return (
     <div className={'cc2-grid-wrapper' + (editMode ? ' cc2-grid-wrapper-editing' : '')}>
-      {page.items.length === 0 && (
+      {items.length === 0 && (
         <div className="cc2-grid-empty-hint">Add a widget to get started</div>
       )}
-      <div className="grid-stack" ref={containerRef}>
+      {/* cc2-grid--editing is what makes the resize handles visible. It has to
+          live here, on an ancestor of .grid-stack-item: the handle is a direct
+          child of .grid-stack-item and a SIBLING of .grid-stack-item-content,
+          so the old .ws-shell.ws-editing selectors — ws-shell being *inside*
+          that content div — described a descendant path that cannot exist and
+          never matched anything. */}
+      <div
+        className={'grid-stack' + (editMode ? ' cc2-grid--editing' : '')}
+        ref={containerRef}
+      >
         {/* Locked, non-persisted spacer occupying row 0 — reserves real space for
             the floating topbar to breathe over instead of a CSS padding hack.
             Gridstack treats it as a real occupied node: autoPosition on new
@@ -264,7 +337,7 @@ export function GridPage({ page, editMode, app, onLayoutChange, onRemoveWidget, 
             gs-id="__nav-spacer__"
             gs-x="0"
             gs-y="0"
-            gs-w="12"
+            gs-w={String(COLUMNS)}
             gs-h="1"
             gs-no-move="true"
             gs-no-resize="true"
@@ -273,7 +346,7 @@ export function GridPage({ page, editMode, app, onLayoutChange, onRemoveWidget, 
             <div className="grid-stack-item-content cc2-grid-spacer-content" />
           </div>
         )}
-        {page.items.map(item => (
+        {items.map(item => (
           <GridItem
             key={item.id}
             item={item}

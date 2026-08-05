@@ -1,4 +1,4 @@
-﻿/* Editorial serif for recipe-adjacent titles (Recipe full-screen title,
+/* Editorial serif for recipe-adjacent titles (Recipe full-screen title,
    Meal Planner's Recipe Box card faces) — must stay the very first rule in
    the file, @import is only valid before any other CSS. Falls back to
    system serifs if offline. Weights 600/700 added for the Recipe Box's
@@ -262,8 +262,10 @@
   align-items:     center;
   position:        absolute;
   top: 0; left: 0; right: 0;
-  /* Float inset from stage edges — the core of the "floating pane" feel */
-  margin:          10px 10px 0;
+  /* Float inset from stage edges — the core of the "floating pane" feel.
+     env(safe-area-inset-top) is 0 everywhere without a notch, so this is the
+     desktop value untouched and a shove clear of the clock/battery on iOS. */
+  margin:          calc(10px + env(safe-area-inset-top, 0px)) 10px 0;
   padding:         0 14px 0 10px;
   height:          46px;
   gap:             0;
@@ -289,6 +291,49 @@
     0 4px 24px rgba(30,24,16,0.14),
     0 1px 5px  rgba(30,24,16,0.08),
     inset 0 1px 0 rgba(255,255,255,0.9);
+}
+
+/* ── Phone top bar ───────────────────────────────────────────────────────────
+   Two problems, both only visible below ~430px of width.
+
+   1. The actions group (Add Page / Add Widget / Edit / AI) sat off-screen in
+      portrait. .cc2-topbar-spacer is flex:1, so it eats every spare pixel and
+      then pushes the actions past the right edge with no way to reach them.
+      Killing the spacer and letting the bar scroll horizontally puts them a
+      swipe away. Both groups need flex-shrink:0 or flexbox compresses them
+      into the available width instead of overflowing — and overflow is
+      precisely what we want here, since it's what makes scrolling possible.
+
+   2. A 56px bar pinned over a 390px-wide screen is a lot to give up
+      permanently. It hides on scroll down and returns on scroll up (see the
+      capture-phase scroll listener in app.tsx). Because the bar is already
+      position:absolute, this moves nothing else on the page.
+   ────────────────────────────────────────────────────────────────────────── */
+.cc2-stage--phone .cc2-topbar {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  transition: transform 0.22s ease, opacity 0.22s ease;
+}
+
+.cc2-stage--phone .cc2-topbar::-webkit-scrollbar { display: none; }
+
+.cc2-stage--phone .cc2-topbar-spacer { display: none; }
+
+.cc2-stage--phone .cc2-tabs,
+.cc2-stage--phone .cc2-topbar-actions { flex-shrink: 0; }
+
+/* Left border reads as a divider mid-scroll rather than a stray rule when the
+   actions group is the only thing in view. */
+.cc2-stage--phone .cc2-topbar-actions { margin-left: 10px; }
+
+/* Slides up past its own safe-area offset, not just its height, or the capsule
+   stays peeking below the notch on a device with an inset. */
+.cc2-stage--phone .cc2-topbar--hidden {
+  transform: translateY(calc(-100% - 10px - env(safe-area-inset-top, 0px)));
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Tab strip — vertically centered, not stretched to full height */
@@ -572,7 +617,15 @@
 .cc2-grid-wrapper {
   position:        absolute;
   inset:           0;
-  padding:         6px 10px 10px;
+  /* The safe-area insets ride on the scroll container rather than the nav
+     spacer: the spacer reserves whole grid ROWS (gs-h="1" x 80px) and has no
+     way to express env(). Padding here shifts the spacer along with everything
+     else, and the bottom inset keeps the last widget clear of the iOS home
+     indicator. All four values collapse to the originals without insets. */
+  padding:         calc(6px + env(safe-area-inset-top, 0px))
+                   calc(10px + env(safe-area-inset-right, 0px))
+                   calc(10px + env(safe-area-inset-bottom, 0px))
+                   calc(10px + env(safe-area-inset-left, 0px));
   overflow-y:      auto;
   overflow-x:      hidden;
   /* translateZ forces this scroll container into its own GPU compositing layer.
@@ -773,7 +826,17 @@
   z-index:  1;
 }
 
-/* Resize handle */
+/* Resize handle
+   ──────────────────────────────────────────────────────────────────────────
+   The edit-mode selectors here used to be .ws-shell.ws-editing .ui-resizable-se
+   (and a sibling variant). Neither could ever match: .ws-shell is rendered
+   INSIDE .grid-stack-item-content, while the handle Gridstack injects is a
+   direct child of .grid-stack-item and therefore a *sibling* of that content
+   div — never a descendant of ws-shell. The handle was pinned at opacity 0
+   with only the :hover rule below ever revealing it, which is why resizing
+   worked on a mouse and was invisible (though technically still hittable) on
+   touch. The class now comes from the grid container, which genuinely is an
+   ancestor — see GridPage's cc2-grid--editing. */
 .grid-stack-item > .ui-resizable-se {
   width:   22px;
   height:  22px;
@@ -784,8 +847,41 @@
 }
 
 .grid-stack-item:hover > .ui-resizable-se { opacity: 0.3; }
-.ws-shell.ws-editing ~ * .ui-resizable-se,
-.ws-shell.ws-editing   .ui-resizable-se  { opacity: 0.6; }
+.cc2-grid--editing .grid-stack-item > .ui-resizable-se { opacity: 0.6; }
+
+/* Touch sizing for the grid's own drag/resize affordances.
+   ──────────────────────────────────────────────────────────────────────────
+   Same reasoning as the coarse-pointer block down in the DataGrid section, and
+   the sweep that block's note says was still outstanding.
+
+   touch-action: none is mandatory, not defensive. Without it Safari claims the
+   gesture for scrolling .cc2-grid-wrapper the moment the finger moves, and
+   Gridstack's touch layer (node_modules/gridstack/dist/dd-touch.js) never sees
+   a drag — the handle appears to do nothing at all. */
+@media (pointer: coarse) {
+  .grid-stack-item > .ui-resizable-se {
+    width:  44px;
+    height: 44px;
+    bottom: 0;
+    right:  0;
+    touch-action: none;
+  }
+
+  /* A handle revealed by :hover is a handle that does not exist on a phone,
+     and iOS makes it worse by leaving :hover stuck on the last-tapped element.
+     Bind visibility to edit mode instead — equal specificity to the hover rule
+     above, so it wins on source order. */
+  .grid-stack-item:hover > .ui-resizable-se { opacity: 0; }
+  .cc2-grid--editing .grid-stack-item > .ui-resizable-se { opacity: 0.85; }
+
+  /* Moving a widget is gated on .ws-drag-handle (GridPage's draggable.handle),
+     so a grip too small to hit is a widget that cannot be moved. Scoped to edit
+     mode: outside it the toolbar must stay a normal scroll surface. */
+  .cc2-grid--editing .ws-drag-handle {
+    min-height:   44px;
+    touch-action: none;
+  }
+}
 
 /* Source file badge — bottom-LEFT corner (keeps right side clear for queue chevron) */
 .ws-source-badge {

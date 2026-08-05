@@ -60,10 +60,37 @@ export interface LayoutItem {
   config?: Record<string, unknown>;
 }
 
+/**
+ * Where one widget sits on the phone's 6-column grid.
+ *
+ * Geometry only, deliberately. Which widgets exist and how they're configured
+ * stays single-sourced in PageLayout.items — a widget added or removed on the
+ * phone is added or removed everywhere, because it's the same widget. Only
+ * where it sits differs, because 6 columns and 12 columns can't share
+ * coordinates.
+ */
+export interface MobilePlacement {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface PageLayout {
   id: string;
   label: string;
   items: LayoutItem[];
+  /**
+   * Phone-only placements, in 6-column space. Absent until the page is first
+   * opened on a phone, which seeds it from `items`.
+   *
+   * Kept apart from `items` because Gridstack rewrites every coordinate when
+   * the column count changes, and the resulting `change` event persists —
+   * a shared field would mean opening the dashboard on a phone silently
+   * collapsed the desktop layout into its left half.
+   */
+  mobilePlacements?: MobilePlacement[];
 }
 
 export interface MITState {

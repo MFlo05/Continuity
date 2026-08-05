@@ -80,7 +80,23 @@ class CC2View extends ItemView {
     container.empty();
     container.addClass("cc2-root");
     this.root = createRoot(container);
-    this.root.render(
+    this.renderApp();
+  }
+
+  /**
+   * Renders (or re-renders) the dashboard into the existing React root.
+   *
+   * Separate from onOpen so settings changes can push new props in without
+   * tearing the view down. Values like the Google client id are read from
+   * pluginData at render time and handed down as props, so editing them in the
+   * settings tab did nothing until the whole view was recreated — which read
+   * as "the credentials didn't save".
+   *
+   * Re-rendering the same component into the same root is a reconcile, not a
+   * remount: App's state (active page, edit mode) and Gridstack's DOM survive.
+   */
+  renderApp(): void {
+    this.root?.render(
       createElement(DashboardApp, {
         app:             this.app,
         initialPages:    this.plugin.pluginData.pages    ?? DEFAULT_PAGES,
@@ -268,6 +284,21 @@ export default class CC2Plugin extends Plugin {
 
   async savePluginData(): Promise<void> {
     await this.saveData(this.pluginData);
+  }
+
+  /**
+   * Push current pluginData into any open dashboard view.
+   *
+   * Call after changing a setting the React tree receives as a prop (the Google
+   * OAuth credentials). Without it the change sits in pluginData and data.json
+   * while the mounted view keeps serving the props it captured at open time,
+   * so the setting only appears to take effect after an Obsidian reload.
+   */
+  refreshDashboardViews(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+      const view = leaf.view;
+      if (view instanceof CC2View) view.renderApp();
+    }
   }
 
   /**

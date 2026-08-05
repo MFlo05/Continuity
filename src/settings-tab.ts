@@ -8,10 +8,26 @@ import { DEFAULT_COMMAND_CENTER_ROOT, setCommandCenterRoot } from './data-source
 // Setting API is the right tool, not another AIPanel-style modal.
 export class CC2SettingTab extends PluginSettingTab {
   plugin: CC2Plugin;
+  private credTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(app: App, plugin: CC2Plugin) {
     super(app, plugin);
     this.plugin = plugin;
+  }
+
+  /**
+   * Save the credentials and push them into any open dashboard.
+   *
+   * Debounced because onChange fires per keystroke, and refreshDashboardViews()
+   * re-renders the whole widget tree — doing that on every character typed into
+   * a 70-character client id would be visibly janky.
+   */
+  private commitCredentials(): void {
+    if (this.credTimer) clearTimeout(this.credTimer);
+    this.credTimer = setTimeout(async () => {
+      await this.plugin.savePluginData();
+      this.plugin.refreshDashboardViews();
+    }, 600);
   }
 
   display(): void {
@@ -61,22 +77,21 @@ export class CC2SettingTab extends PluginSettingTab {
       .addText(text => text
         .setPlaceholder('....apps.googleusercontent.com')
         .setValue(this.plugin.pluginData.googleClientId ?? '')
-        .onChange(async value => {
+        .onChange(value => {
           this.plugin.pluginData.googleClientId = value.trim();
-          await this.plugin.savePluginData();
+          this.commitCredentials();
         }));
 
     new Setting(containerEl)
       .setName('OAuth client secret')
-      .setDesc('Reload the dashboard view after changing either field.')
       .addText(text => {
         text.inputEl.type = 'password';
         return text
           .setPlaceholder('GOCSPX-...')
           .setValue(this.plugin.pluginData.googleClientSecret ?? '')
-          .onChange(async value => {
+          .onChange(value => {
             this.plugin.pluginData.googleClientSecret = value.trim();
-            await this.plugin.savePluginData();
+            this.commitCredentials();
           });
       });
   }

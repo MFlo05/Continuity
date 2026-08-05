@@ -123,8 +123,13 @@ export function CalendarProvider({ tokenStore, clientId, clientSecret, children 
         loadInitialData();
       }
     }).catch(console.error);
+  // Keyed on the credentials, not []: they can arrive after mount, when they're
+  // typed into the settings tab and pushed in as new props. With [] this ran
+  // once against empty strings, bailed at the guard above, and never looked
+  // again — so a freshly entered client id appeared to do nothing until
+  // Obsidian was reloaded.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [clientId, clientSecret]);
 
   // ── Background auto-refresh every 30 minutes ──────────────────────────────
   React.useEffect(() => {

@@ -112,13 +112,15 @@ function PageTabMenu({ label, disableDelete, disableMoveLeft, disableMoveRight, 
           to auto the moment overflow-x isn't visible, so there is no way to
           scroll sideways and let a dropdown escape upward. Only leaving the
           subtree gets the menu out from under that clip.
-          .cc2-root on the portal is the token bridge (UI-PATTERNS gotcha #4):
-          the --cc2-* custom properties are declared there and don't inherit
-          across a portal boundary. */}
+          Tokens come from the shared bridge block near the top of styles.css
+          (UI-PATTERNS gotcha #4) — .cc2-tab-menu--floating is listed there
+          alongside the other portaled surfaces. Do NOT reach for .cc2-root as
+          a shortcut: it carries height:100%, flex:1 and display:flex along
+          with the tokens, which stretched this menu to the full page height. */}
       {open && createPortal(
         <div
           ref={menuRef}
-          className="cc2-root cc2-tab-menu cc2-tab-menu--floating"
+          className="cc2-tab-menu cc2-tab-menu--floating"
           style={{ top: pos.top, left: pos.left }}
         >
           <button

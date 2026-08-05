@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { App, Menu, FileSystemAdapter, Platform } from 'obsidian';
 import type { PageLayout, LayoutItem, WidgetType, MITState } from './types';
 import { widgetRegistry } from './widgets/registry';
-import { GridPage } from './grid/GridPage';
+import { GridPage, GRID_COLUMNS } from './grid/GridPage';
 import { WidgetLibraryModal } from './grid/WidgetLibraryModal';
 import { WidgetSettingsModal } from './grid/WidgetSettingsModal';
 import { DashboardProvider } from './context/DashboardContext';
@@ -294,9 +294,28 @@ export function App({ app, initialPages, initialMitTasks, tokenStore, aiDataStor
       config: extraConfig,
     };
     setPages(prev => {
-      const next = prev.map(p =>
-        p.id === activePageId ? { ...p, items: [...p.items, newItem] } : p
-      );
+      const next = prev.map(p => {
+        if (p.id !== activePageId) return p;
+        const withItem = { ...p, items: [...p.items, newItem] };
+        if (!Platform.isPhone) return withItem;
+
+        // A widget added ON a phone starts full width.
+        //
+        // Without an explicit placement it would fall through to the seeding
+        // path, which halves defaultSize.w to keep desktop proportions. That's
+        // right for widgets carried over from an existing desktop layout, but
+        // wrong for one you just picked here: defaults run 3-12 columns, so
+        // halving drops a new widget to 2-6 of 6 — a Todo list arriving at half
+        // the screen or less, which is not a width anyone chose. Full width is
+        // the sane default on a phone; shrink it afterwards if you want a pair.
+        return {
+          ...withItem,
+          mobilePlacements: [
+            ...(p.mobilePlacements ?? []),
+            { id: newItem.id, x: 0, y: 0, w: GRID_COLUMNS, h: newItem.h },
+          ],
+        };
+      });
       persistPages(next);
       return next;
     });

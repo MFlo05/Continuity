@@ -1,6 +1,6 @@
 {
   "name": "continuity",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Personal dashboard Obsidian plugin with Gridstack widget grid",
   "private": true,
   "scripts": {

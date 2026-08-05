@@ -66,6 +66,18 @@ const COLUMNS         = IS_PHONE ? 6 : DESKTOP_COLUMNS;
 const COLUMN_SCALE    = COLUMNS / DESKTOP_COLUMNS;
 
 /**
+ * The active column count, for callers that need to place a widget themselves
+ * (app.tsx sizes phone-added widgets to full width).
+ *
+ * Changing this value requires matching .gs-<n> rules in styles.css. The core
+ * Gridstack sheet only ships .gs-12 and .gs-1; .gs-2 through .gs-11 come from
+ * gridstack-extra, inlined below the core block. A column count with no
+ * matching rules renders every widget at zero width — an entirely blank grid
+ * with no error anywhere.
+ */
+export const GRID_COLUMNS = COLUMNS;
+
+/**
  * Scales a registry minSize.w into the active grid.
  *
  * Widget minimums are authored against 12 columns, so a widget declaring
@@ -181,6 +193,7 @@ const GridItem = memo(function GridItem({
 
 export function GridPage({ page, editMode, app, onLayoutChange, onRemoveWidget, onConfigChange, showNavSpacer = true }: GridPageProps) {
   const containerRef  = useRef<HTMLDivElement>(null);
+  const wrapperRef    = useRef<HTMLDivElement>(null);
   const gridRef       = useRef<GridStack | null>(null);
   // Track which item IDs Gridstack already owns (to detect newly added ones)
   const registeredIds = useRef(new Set<string>());
@@ -287,6 +300,52 @@ export function GridPage({ page, editMode, app, onLayoutChange, onRemoveWidget, 
     gridRef.current.compact();
   }, [items]);
 
+  // Keep Obsidian's edge-swipe gestures off a drag that's already in progress.
+  //
+  // Obsidian mobile opens its left/right sidebars on horizontal swipes, and
+  // those handlers sit above this view in the tree. Drag or resize a widget
+  // anywhere near a screen edge and the swipe wins partway through, so the
+  // widget snaps back — which reads as "resize randomly doesn't work".
+  //
+  // Gridstack binds to the handle element itself, which is BELOW this wrapper,
+  // so stopping propagation here lets the drag through while starving the
+  // sidebar gesture of the same events. Bubble phase only, deliberately: a
+  // capture-phase listener here would swallow the event before Gridstack ever
+  // saw it and break dragging outright.
+  //
+  // Scoped to gestures that START on a handle. A finger anywhere else must
+  // still scroll the grid and must still be able to reach the sidebars.
+  useEffect(() => {
+    if (!IS_PHONE) return;
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+
+    let dragging = false;
+
+    const onStart = (e: TouchEvent) => {
+      const target = e.target as HTMLElement | null;
+      dragging = !!target?.closest('.ui-resizable-handle, .ws-drag-handle');
+      if (dragging) e.stopPropagation();
+    };
+    const onMove = (e: TouchEvent) => { if (dragging) e.stopPropagation(); };
+    const onEnd  = (e: TouchEvent) => {
+      if (!dragging) return;
+      e.stopPropagation();
+      dragging = false;
+    };
+
+    wrapper.addEventListener('touchstart',  onStart);
+    wrapper.addEventListener('touchmove',   onMove);
+    wrapper.addEventListener('touchend',    onEnd);
+    wrapper.addEventListener('touchcancel', onEnd);
+    return () => {
+      wrapper.removeEventListener('touchstart',  onStart);
+      wrapper.removeEventListener('touchmove',   onMove);
+      wrapper.removeEventListener('touchend',    onEnd);
+      wrapper.removeEventListener('touchcancel', onEnd);
+    };
+  }, []);
+
   // Toggle drag/resize when editMode flips — no grid rebuild needed
   useEffect(() => {
     const g = gridRef.current;
@@ -310,7 +369,10 @@ export function GridPage({ page, editMode, app, onLayoutChange, onRemoveWidget, 
   }, [onRemoveWidget]);
 
   return (
-    <div className={'cc2-grid-wrapper' + (editMode ? ' cc2-grid-wrapper-editing' : '')}>
+    <div
+      ref={wrapperRef}
+      className={'cc2-grid-wrapper' + (editMode ? ' cc2-grid-wrapper-editing' : '')}
+    >
       {items.length === 0 && (
         <div className="cc2-grid-empty-hint">Add a widget to get started</div>
       )}

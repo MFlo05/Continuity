@@ -1,7 +1,7 @@
 {
   "id": "continuity",
   "name": "Continuity",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "minAppVersion": "1.4.0",
   "description": "Personal dashboard with a drag-and-drop widget grid.",
   "author": "Mason",

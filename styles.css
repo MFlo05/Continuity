@@ -452,6 +452,14 @@
   display:       flex; flex-direction: column;
   z-index:       20;
 }
+/* Portaled variant — top/left come from the button's bounding rect, set inline.
+   z-index clears .cc2-modal-backdrop's neighbourhood since this now lives at
+   body level rather than inside the topbar's stacking context. */
+.cc2-tab-menu--floating {
+  position: fixed;
+  z-index:  9999;
+}
+
 .cc2-tab-menu-item {
   text-align:     left;
   padding:        8px 10px;
@@ -835,8 +843,15 @@
    div — never a descendant of ws-shell. The handle was pinned at opacity 0
    with only the :hover rule below ever revealing it, which is why resizing
    worked on a mouse and was invisible (though technically still hittable) on
-   touch. The class now comes from the grid container, which genuinely is an
-   ancestor — see GridPage's cc2-grid--editing. */
+   touch.
+
+   Edit state comes from .cc2-grid-wrapper-editing, a real ancestor of the
+   handle and — critically — React-owned. The .grid-stack element inside it
+   belongs to Gridstack, which adds gs-<column>, a per-instance stylesheet
+   class and grid-stack-animate to it during init. Every widget's generated
+   width/position rule is scoped to those, so a React className on THAT element
+   overwrites el.className and strips them, collapsing every widget to nothing.
+   Style edit mode from the wrapper, never from the grid. */
 .grid-stack-item > .ui-resizable-se {
   width:   22px;
   height:  22px;
@@ -847,7 +862,7 @@
 }
 
 .grid-stack-item:hover > .ui-resizable-se { opacity: 0.3; }
-.cc2-grid--editing .grid-stack-item > .ui-resizable-se { opacity: 0.6; }
+.cc2-grid-wrapper-editing .grid-stack-item > .ui-resizable-se { opacity: 0.6; }
 
 /* Touch sizing for the grid's own drag/resize affordances.
    ──────────────────────────────────────────────────────────────────────────
@@ -872,12 +887,12 @@
      Bind visibility to edit mode instead — equal specificity to the hover rule
      above, so it wins on source order. */
   .grid-stack-item:hover > .ui-resizable-se { opacity: 0; }
-  .cc2-grid--editing .grid-stack-item > .ui-resizable-se { opacity: 0.85; }
+  .cc2-grid-wrapper-editing .grid-stack-item > .ui-resizable-se { opacity: 0.85; }
 
   /* Moving a widget is gated on .ws-drag-handle (GridPage's draggable.handle),
      so a grip too small to hit is a widget that cannot be moved. Scoped to edit
      mode: outside it the toolbar must stay a normal scroll surface. */
-  .cc2-grid--editing .ws-drag-handle {
+  .cc2-grid-wrapper-editing .ws-drag-handle {
     min-height:   44px;
     touch-action: none;
   }

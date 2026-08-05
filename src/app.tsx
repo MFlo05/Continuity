@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { App, Menu, FileSystemAdapter, Platform } from 'obsidian';
 import type { PageLayout, LayoutItem, WidgetType, MITState } from './types';
 import { widgetRegistry } from './widgets/registry';
@@ -42,26 +43,62 @@ function PageTabMenu({ label, disableDelete, disableMoveLeft, disableMoveRight, 
   onRename: () => void; onDelete: () => void; onMoveLeft: () => void; onMoveRight: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [pos,  setPos]  = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const wrapRef = useRef<HTMLDivElement>(null);
+  const btnRef  = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
       if (wrapRef.current?.contains(e.target as Node)) return;
+      // The menu is portaled to document.body, so it is NOT inside wrapRef.
+      // Without this second check, mousedown on a menu item counts as an
+      // outside click and unmounts the button before its own click can fire —
+      // every item would look dead.
+      if (menuRef.current?.contains(e.target as Node)) return;
       setOpen(false);
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
 
+  // Fixed coordinates are a snapshot, and on a phone the top bar itself scrolls
+  // horizontally — so anything that moves the button leaves the menu stranded
+  // mid-air. Capture phase, because scroll doesn't bubble.
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener('resize', close);
+    document.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('resize', close);
+      document.removeEventListener('scroll', close, true);
+    };
+  }, [open]);
+
+  function toggle() {
+    if (open) { setOpen(false); return; }
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) {
+      const MENU_W = 158;  // min-width 150 + 4px padding each side
+      setPos({
+        top:  r.bottom + 4,
+        left: Math.max(8, Math.min(r.left, window.innerWidth - MENU_W - 8)),
+      });
+    }
+    setOpen(true);
+  }
+
   return (
     <div className="cc2-tab-menu-wrap" ref={wrapRef}>
       <button
         type="button"
+        ref={btnRef}
         className="cc2-flush-btn cc2-tab-menu-btn"
         title={`Page options for "${label}"`}
         aria-label={`Page options for ${label}`}
-        onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+        onClick={e => { e.stopPropagation(); toggle(); }}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
           <circle cx="5" cy="12" r="2.2" />
@@ -69,8 +106,21 @@ function PageTabMenu({ label, disableDelete, disableMoveLeft, disableMoveRight, 
           <circle cx="19" cy="12" r="2.2" />
         </svg>
       </button>
-      {open && (
-        <div className="cc2-tab-menu">
+      {/* Portaled to document.body, not rendered in place.
+          The phone top bar is a horizontal scroll container, and a scroll
+          container clips its children on BOTH axes — CSS computes overflow-y
+          to auto the moment overflow-x isn't visible, so there is no way to
+          scroll sideways and let a dropdown escape upward. Only leaving the
+          subtree gets the menu out from under that clip.
+          .cc2-root on the portal is the token bridge (UI-PATTERNS gotcha #4):
+          the --cc2-* custom properties are declared there and don't inherit
+          across a portal boundary. */}
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          className="cc2-root cc2-tab-menu cc2-tab-menu--floating"
+          style={{ top: pos.top, left: pos.left }}
+        >
           <button
             type="button"
             className="cc2-tab-menu-item"
@@ -102,7 +152,8 @@ function PageTabMenu({ label, disableDelete, disableMoveLeft, disableMoveRight, 
           >
             Delete Page
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

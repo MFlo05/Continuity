@@ -35,5 +35,49 @@ export class CC2SettingTab extends PluginSettingTab {
           setCommandCenterRoot(trimmed);
           await this.plugin.savePluginData();
         }));
+
+    // ── Google Calendar ──────────────────────────────────────────────────────
+    // Entered per device rather than compiled in. They can't be literals in the
+    // source: esbuild inlines them into main.js, which is committed and shipped
+    // as a public release asset, so a hardcoded value is a published value.
+    //
+    // These belong in the UI and not just in data.json. Editing that file by
+    // hand while Obsidian is running does nothing — the plugin holds pluginData
+    // in memory and the next save writes it straight back over your edit.
+    containerEl.createEl('h3', { text: 'Google Calendar' });
+
+    const desc = containerEl.createEl('p', {
+      text:
+        'From a Google Cloud project with the Calendar API enabled, using an ' +
+        'OAuth client of type "Desktop app". Stored only on this device, in ' +
+        'this vault. The calendar stays disconnected until both are filled in.',
+    });
+    desc.style.fontSize   = '13px';
+    desc.style.opacity    = '0.75';
+    desc.style.marginTop  = '-6px';
+
+    new Setting(containerEl)
+      .setName('OAuth client ID')
+      .addText(text => text
+        .setPlaceholder('....apps.googleusercontent.com')
+        .setValue(this.plugin.pluginData.googleClientId ?? '')
+        .onChange(async value => {
+          this.plugin.pluginData.googleClientId = value.trim();
+          await this.plugin.savePluginData();
+        }));
+
+    new Setting(containerEl)
+      .setName('OAuth client secret')
+      .setDesc('Reload the dashboard view after changing either field.')
+      .addText(text => {
+        text.inputEl.type = 'password';
+        return text
+          .setPlaceholder('GOCSPX-...')
+          .setValue(this.plugin.pluginData.googleClientSecret ?? '')
+          .onChange(async value => {
+            this.plugin.pluginData.googleClientSecret = value.trim();
+            await this.plugin.savePluginData();
+          });
+      });
   }
 }

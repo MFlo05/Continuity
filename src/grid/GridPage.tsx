@@ -314,16 +314,14 @@ export function GridPage({ page, editMode, app, onLayoutChange, onRemoveWidget, 
       {items.length === 0 && (
         <div className="cc2-grid-empty-hint">Add a widget to get started</div>
       )}
-      {/* cc2-grid--editing is what makes the resize handles visible. It has to
-          live here, on an ancestor of .grid-stack-item: the handle is a direct
-          child of .grid-stack-item and a SIBLING of .grid-stack-item-content,
-          so the old .ws-shell.ws-editing selectors — ws-shell being *inside*
-          that content div — described a descendant path that cannot exist and
-          never matched anything. */}
-      <div
-        className={'grid-stack' + (editMode ? ' cc2-grid--editing' : '')}
-        ref={containerRef}
-      >
+      {/* NEVER put a React-managed className on this element. Gridstack owns it
+          and adds classes of its own during init — gs-<column>, a per-instance
+          stylesheet class, grid-stack-animate — and every widget's generated
+          width/position rules are scoped to those. React re-rendering the
+          attribute overwrites el.className wholesale, silently stripping them,
+          and every widget collapses to nothing. Edit-mode styling hangs off
+          .cc2-grid-wrapper-editing on the wrapper above instead. */}
+      <div className="grid-stack" ref={containerRef}>
         {/* Locked, non-persisted spacer occupying row 0 — reserves real space for
             the floating topbar to breathe over instead of a CSS padding hack.
             Gridstack treats it as a real occupied node: autoPosition on new

@@ -110,10 +110,13 @@ export function CalendarProvider({ tokenStore, clientId, clientSecret, children 
     // Loading anyway would fail with "Token refresh failed", which isAuthDead()
     // reads as an expired session and answers by clearing the stored refresh
     // token — destroying a working connection over a missing config value.
-    if (!clientId || !clientSecret) {
-      setError("Google Calendar isn't configured on this device. Add googleClientId and googleClientSecret to this vault's plugin data.json.");
-      return;
-    }
+    //
+    // Deliberately NOT setError: "no credentials entered yet" is a normal
+    // starting state, not a failure, and setError paints a red banner across
+    // the widget. Leaving status at "disconnected" shows the ordinary Connect
+    // prompt, which is both accurate and actionable. The error channel is for
+    // things that actually went wrong.
+    if (!clientId || !clientSecret) return;
     tokenStore.getTokens().then((tokens) => {
       if (tokens) {
         setStatus("connected");

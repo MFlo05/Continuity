@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Menu } from 'obsidian';
+import { Menu, Platform } from 'obsidian';
 import type { App } from 'obsidian';
 import { readClassInfo, readClassTranscript, listClasses, watchClassesFolder } from '../../data-sources/class-info';
 import type { ClassInfoFields, ClassTranscript } from '../../data-sources/class-info';
@@ -9,7 +9,7 @@ import { readClassLayout, writeClassLayout } from '../../data-sources/class-layo
 import { readGradeCategories } from '../../data-sources/class-grade-categories';
 import type { GradeCategory } from '../../data-sources/class-grade-categories';
 import { mergeAssignments, computeGrade, computeGradeByCategory, letterFor } from '../class-page/assignment-utils';
-import { GridPage } from '../../grid/GridPage';
+import { GridPage, GRID_COLUMNS } from '../../grid/GridPage';
 import { WidgetLibraryModal } from '../../grid/WidgetLibraryModal';
 import { WidgetSettingsModal } from '../../grid/WidgetSettingsModal';
 import { widgetRegistry } from '../registry';
@@ -21,7 +21,7 @@ import { useAI } from '../../ai/AIContext';
 import { AIPanel, useIsDark } from '../../ai/AIPanel';
 import { BrandMark } from '../../ai/BrandMark';
 import { getCC2Plugin } from '../../../main';
-import type { LayoutItem, PageLayout, WidgetType } from '../../types';
+import type { LayoutItem, MobilePlacement, PageLayout, WidgetType } from '../../types';
 
 interface Props {
   app:  App;
@@ -48,6 +48,10 @@ export function ClassPageContent({ app, slug, onSwitchClass }: Props) {
   const [transcript,  setTranscript]  = useState<ClassTranscript | null>(null);
   const [progress,    setProgress]    = useState<ClassProgress | null>(null);
   const [layoutItems, setLayoutItems] = useState<LayoutItem[] | null>(null);
+  // Phone geometry, kept apart from layoutItems for the same reason the
+  // dashboard keeps its own: a 6-column grid and a 12-column one cannot share
+  // coordinates, and this layout lives in the vault so any mix-up syncs.
+  const [mobilePlacements, setMobilePlacements] = useState<MobilePlacement[] | undefined>(undefined);
   const [allClasses,  setAllClasses]  = useState<ClassInfoFields[]>([]);
   const [categories,  setCategories]  = useState<GradeCategory[]>([]);
 
@@ -94,8 +98,10 @@ export function ClassPageContent({ app, slug, onSwitchClass }: Props) {
     setLayoutItems(null);
     let cancelled = false;
     (async () => {
-      const items = await readClassLayout(app, slug);
-      if (!cancelled) setLayoutItems(items);
+      const layout = await readClassLayout(app, slug);
+      if (cancelled) return;
+      setMobilePlacements(layout.mobilePlacements);
+      setLayoutItems(layout.items);
     })();
     return () => { cancelled = true; };
   }, [app, slug]);
@@ -139,20 +145,39 @@ export function ClassPageContent({ app, slug, onSwitchClass }: Props) {
     return () => document.removeEventListener('mousedown', onDown);
   }, [showGradeEdit, switcherOpen]);
 
-  const persistLayout = useCallback((items: LayoutItem[]) => {
+  // Both halves go through here so a write can never persist one without the
+  // other — writeClassLayout replaces the whole file.
+  const persistLayout = useCallback((items: LayoutItem[], placements?: MobilePlacement[]) => {
     setLayoutItems(items);
+    setMobilePlacements(placements);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => writeClassLayout(app, slug, items), 500);
+    saveTimer.current = setTimeout(
+      () => writeClassLayout(app, slug, { items, mobilePlacements: placements }),
+      500,
+    );
   }, [app, slug]);
 
-  const handleLayoutChange = useCallback((items: LayoutItem[]) => persistLayout(items), [persistLayout]);
+  // Same split as the dashboard: GridPage reports whatever the live grid holds,
+  // and on a phone that's 6-column geometry which must not overwrite `items`.
+  const handleLayoutChange = useCallback((items: LayoutItem[]) => {
+    if (!Platform.isPhone) {
+      persistLayout(items, mobilePlacements);
+      return;
+    }
+    persistLayout(
+      layoutItems ?? [],
+      items.map(({ id, x, y, w, h }) => ({ id, x, y, w, h })),
+    );
+  }, [persistLayout, layoutItems, mobilePlacements]);
   const handleRemoveWidget = useCallback((id: string) => {
     setLayoutItems(prev => {
       const next = (prev ?? []).filter(i => i.id !== id);
-      persistLayout(next);
+      // Drop the phone placement with it, or Layout.json accumulates entries
+      // for widgets that no longer exist.
+      persistLayout(next, mobilePlacements?.filter(m => m.id !== id));
       return next;
     });
-  }, [persistLayout]);
+  }, [persistLayout, mobilePlacements]);
   // WidgetLibraryModal already runs its own WidgetSettingsModal ('create'
   // mode, tone/wash picker) before calling this — config arrives pre-filled,
   // same as the main dashboard's own handleAddWidget in app.tsx.
@@ -162,18 +187,27 @@ export function ClassPageContent({ app, slug, onSwitchClass }: Props) {
     setLayoutItems(prev => {
       const newItem: LayoutItem = { id: `${type}-${Date.now()}`, type, x: 0, y: 0, w: def.defaultSize.w, h: def.defaultSize.h, config };
       const next = [...(prev ?? []), newItem];
-      persistLayout(next);
+      // Added on a phone: full width. Without an explicit placement it falls
+      // through to GridPage's seeding, which halves defaultSize.w to preserve
+      // desktop proportions — right for widgets inherited from a desktop
+      // layout, wrong for one just picked here, which lands at half a screen.
+      persistLayout(
+        next,
+        Platform.isPhone
+          ? [...(mobilePlacements ?? []), { id: newItem.id, x: 0, y: 0, w: GRID_COLUMNS, h: newItem.h }]
+          : mobilePlacements,
+      );
       return next;
     });
     setLibraryOpen(false);
-  }, [persistLayout]);
+  }, [persistLayout, mobilePlacements]);
   const handleConfigChange = useCallback((id: string, patch: Record<string, unknown>) => {
     setLayoutItems(prev => {
       const next = (prev ?? []).map(i => i.id === id ? { ...i, config: { ...i.config, ...patch } } : i);
-      persistLayout(next);
+      persistLayout(next, mobilePlacements);
       return next;
     });
-  }, [persistLayout]);
+  }, [persistLayout, mobilePlacements]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -206,7 +240,8 @@ export function ClassPageContent({ app, slug, onSwitchClass }: Props) {
       ...item,
       config: { ...item.config, classSlug: slug, classCode: info?.code ?? '' },
     })),
-  }), [slug, info?.code, layoutItems]);
+    mobilePlacements,
+  }), [slug, info?.code, layoutItems, mobilePlacements]);
 
   const assignments = useMemo(() => mergeAssignments(transcript, progress), [transcript, progress]);
   const computed = useMemo(
@@ -240,7 +275,7 @@ export function ClassPageContent({ app, slug, onSwitchClass }: Props) {
 
   return (
     <div className="cc2-cfs-backdrop" data-tone={info.color} onContextMenu={handleContextMenu}>
-      <div className="cc2-cfs-shell">
+      <div className={'cc2-cfs-shell' + (Platform.isPhone ? ' cc2-cfs--phone' : '')}>
         <div className="cc2-cfs-topbar">
           <div className="cc2-cfs-chip-wrap" ref={switcherWrapRef}>
             <button type="button" className="cc2-flush-btn cc2-cfs-chip" title="Switch class" onClick={() => setSwitcherOpen(o => !o)}>

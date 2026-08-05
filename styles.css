@@ -334,6 +334,21 @@
 
 .cc2-stage--phone .cc2-topbar-spacer { display: none; }
 
+/* Page tabs are <button>s, and Obsidian's mobile stylesheet gives buttons its
+   own min-height for touch — which is taller than the 46px capsule they sit
+   in, so they overflowed it. Declaring the full box model with !important is
+   the documented requirement for any custom button here (CLAUDE.md
+   non-negotiable #4); height alone loses to Obsidian's min-height. The rename
+   input is sized to match so swapping into it doesn't jog the strip. */
+.cc2-stage--phone .cc2-tab,
+.cc2-stage--phone .cc2-tab-rename-input {
+  height:      30px !important;
+  min-height:  30px !important;
+  line-height: 1 !important;
+  padding:     0 13px !important;
+  font-size:   12px !important;
+}
+
 .cc2-stage--phone .cc2-tabs,
 .cc2-stage--phone .cc2-topbar-actions { flex-shrink: 0; }
 
@@ -2833,7 +2848,7 @@
   width: 28px; height: 28px; border-radius: var(--cc2-radius-xs);
   color: var(--cc2-faint); flex-shrink: 0;
 }
-.cc2-cal-fs-side-toggle svg { width: 13px !important; height: 13px !important; min-width: 13px !important; }
+.cc2-cal-fs-side-toggle svg { width: 15px !important; height: 15px !important; min-width: 15px !important; }
 .cc2-cal-fs-side-toggle.active { color: var(--cc2-text); background: var(--cc2-btn-bg) !important; }
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -2850,23 +2865,35 @@
    ────────────────────────────────────────────────────────────────────────── */
 .cc2-fs--phone .cc2-cal-fs-topbar {
   padding-top: calc(10px + env(safe-area-inset-top, 0px));
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
-.cc2-fs--phone .cc2-cal-fs-topbar::-webkit-scrollbar { display: none; }
 
-/* Without this flexbox compresses each control to fit rather than overflowing,
-   and overflow is what makes the row scrollable in the first place. */
-.cc2-fs--phone .cc2-cal-fs-topbar > * { flex-shrink: 0; }
+/* Two rows, arranged with order + a full-width break rather than by wrapping
+   the controls in row <div>s. The JSX order (Exit, toggle, nav, view, Add) is
+   the right one for a desktop single row, and restructuring it — or using
+   display:contents wrappers — would have reordered the desktop bar to match
+   the phone grouping. order + ::after leaves desktop DOM and layout untouched.
 
-/* margin-left:auto is set inline on Add Event to push it right on desktop.
-   In a scrolling row that auto margin collapses unpredictably — a fixed gap
-   keeps it a consistent swipe away. */
-.cc2-fs--phone .cc2-cal-fs-topbar > .cc2-cal-wgt-detailed-btn {
-  margin-left: 8px !important;
+   Row 1: Exit, sidebar toggle, Add Event
+   Row 2: month stepper, Day/Week/Month                                       */
+.cc2-fs--phone .cc2-cal-fs-exit             { order: 1; }
+.cc2-fs--phone .cc2-cal-fs-side-toggle      { order: 2; }
+.cc2-fs--phone .cc2-cal-wgt-detailed-btn    { order: 3; }
+.cc2-fs--phone .cc2-cal-fs-topbar::after {
+  content: ''; order: 4; width: 100%; height: 0;
 }
+.cc2-fs--phone .cc2-cal-fs-nav-pill         { order: 5; }
+.cc2-fs--phone .cc2-cal-fs-view-pill        { order: 6; }
+
+/* Add Event carries an inline margin-left:auto to sit right on desktop. Inline
+   styles outrank stylesheets, so unsetting it needs !important — otherwise it
+   still absorbs all the slack and strands the other row-1 controls. */
+.cc2-fs--phone .cc2-cal-wgt-detailed-btn { margin-left: auto !important; }
+
+/* Both pills span the second row instead of leaving a ragged gap. */
+.cc2-fs--phone .cc2-cal-fs-nav-pill  { flex: 1 1 auto; justify-content: center; }
+.cc2-fs--phone .cc2-cal-fs-view-pill { flex: 0 0 auto; }
 
 /* Full width when opened on a phone: at 200px it was a column of clipped text
    beside an unreadable grid. Shown one at a time instead — the sibling rule
@@ -2878,6 +2905,37 @@
 }
 .cc2-fs--phone .cc2-cal-fs-sidebar ~ .cc2-cal-fs-main { display: none; }
 .cc2-fs--phone .cc2-cal-fs-body { min-width: 0; }
+
+/* Bigger tap target on a phone, and the icon scaled to match. Every value is
+   !important: this is a <button>, and Obsidian's mobile stylesheet sets its own
+   box model on those (non-negotiable #4 in CLAUDE.md) — the desktop 28px was
+   already being overridden, which is what made the icon look shrunken. */
+.cc2-fs--phone .cc2-cal-fs-side-toggle {
+  width: 36px !important; height: 36px !important;
+  min-width: 36px !important; min-height: 36px !important;
+  padding: 0 !important;
+}
+.cc2-fs--phone .cc2-cal-fs-side-toggle svg {
+  width: 19px !important; height: 19px !important; min-width: 19px !important;
+}
+
+/* MiniMonth inside a full-width sidebar.
+   The grid's rows are auto-sized and the container is a stretched flex child,
+   so once the sidebar went from 200px to full width the default
+   align-content:stretch distributed the leftover height between the six week
+   rows — the "spread apart" look. Pinning row height and starting the rows at
+   the top removes the leftover entirely. Cells go full-column-width for a
+   proper touch target instead of staying 22px in a 55px column. */
+.cc2-fs--phone .cc2-cal-mini-month { flex: none; }
+.cc2-fs--phone .cc2-cal-mini-grid  { align-content: start; gap: 3px; }
+.cc2-fs--phone .cc2-cal-mini-cell {
+  width: auto !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  font-size: 13px !important;
+  border-radius: var(--cc2-radius-xs);
+}
+.cc2-fs--phone .cc2-cal-mini-dot { bottom: 4px; width: 4px; height: 4px; }
 .cc2-fs--phone .cc2-cal-fs-main {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -4343,6 +4401,28 @@
 /* Clears the home indicator at the end of the scroll. */
 .cc2-fs--phone .cc2-recipe-fs-main-col {
   padding-bottom: calc(48px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Photo first, then servings, then ingredients.
+   The gallery is declared after the info card, so it takes a negative order
+   rather than the info card taking a positive one — that keeps the source
+   order meaningful on desktop, where this rule doesn't apply. */
+.cc2-fs--phone .cc2-recipe-fs-gallery { order: -1; }
+
+/* The frame is flex:1/min-height:0 by design: on desktop it fills whatever the
+   height-locked side column has left over. Once that column became auto-height
+   for the single-column phone layout, "fill the leftover" resolved to zero and
+   the image vanished — it was rendering correctly all along, into a 0px box
+   (the <img> is position:absolute/inset:0, so it had nothing to give it size).
+   A fixed ratio gives the frame its own height instead of borrowing one. */
+.cc2-fs--phone .cc2-recipe-fs-gallery,
+.cc2-fs--phone .cc2-recipe-fs-gallery-frame {
+  flex: none !important;
+  max-height: none !important;
+}
+.cc2-fs--phone .cc2-recipe-fs-gallery-frame {
+  aspect-ratio: 4 / 3;
+  min-height: 0 !important;
 }
 
 /* ---- Masthead: category chips + big title + Prep/Cook/Total/Serves ---- */
@@ -8078,6 +8158,52 @@
 .cc2-cfs-grid-wrap .cc2-grid-wrapper,
 .cc2-cfs-grid-wrap .cc2-grid-wrapper.cc2-grid-wrapper-editing {
   padding-top: 6px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   CLASS PAGE — PHONE
+   ══════════════════════════════════════════════════════════════════════════════
+   Desktop stacks three fixed bands (topbar / masthead / edit banner) above a
+   grid that scrolls inside its own absolutely-positioned wrapper. On a phone
+   those bands are most of the screen before a single widget appears, and the
+   grid then scrolls in whatever is left.
+
+   Phone hands the scroll to .cc2-cfs-shell instead: the topbar sticks (the
+   class switcher and Done have to stay reachable) and everything below it —
+   masthead included — scrolls away with the content. That requires taking
+   .cc2-grid-wrapper out of position:absolute, since inset:0 against an
+   auto-height parent is zero height, the same trap the recipe gallery hit.
+   ────────────────────────────────────────────────────────────────────────── */
+.cc2-cfs--phone {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cc2-cfs--phone .cc2-cfs-topbar {
+  position: sticky; top: 0; z-index: 6;
+  background: var(--cc2-bg);
+  /* Wrap rather than scroll sideways: the class-switcher popover is a child of
+     this bar, and a scroll container clips on both axes — the same collision
+     that stranded the dashboard's page menu. Wrapping keeps every control
+     reachable with nothing to escape from. */
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+/* flex:1 spacer forces a break before the actions when wrapping is on, which
+   is exactly the ragged two-row split we're trying to avoid. */
+.cc2-cfs--phone .cc2-cfs-topbar .cc2-topbar-spacer { display: none; }
+
+/* Masthead is in the scroll now, so it can afford to be smaller too. */
+.cc2-cfs--phone .cc2-cfs-masthead { padding: 12px 16px 10px; gap: 12px; }
+
+.cc2-cfs--phone .cc2-cfs-grid-wrap { flex: none !important; min-height: 0 !important; }
+.cc2-cfs--phone .cc2-cfs-grid-wrap .cc2-grid-wrapper,
+.cc2-cfs--phone .cc2-cfs-grid-wrap .cc2-grid-wrapper.cc2-grid-wrapper-editing {
+  position: relative !important;
+  inset: auto !important;
+  overflow: visible !important;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
 }
 
 .cc2-cfs-grade-badge {

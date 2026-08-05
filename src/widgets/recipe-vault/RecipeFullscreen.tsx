@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Component, MarkdownRenderer } from 'obsidian';
+import { Component, MarkdownRenderer, Platform } from 'obsidian';
 import type { App, TFile } from 'obsidian';
 import { parseRecipeNote, saveRecipeNotes } from '../../data-sources/recipes';
 import type { RecipeIngredient } from '../../data-sources/recipes';
@@ -192,7 +192,7 @@ export function RecipeFullscreen({ app, file, onClose, tone, wash }: Props) {
 
   return createPortal(
     <div className="cc2-recipe-fs-backdrop" data-tone={tone} data-wash={wash || undefined}>
-      <div className="cc2-recipe-fs">
+      <div className={'cc2-recipe-fs' + (Platform.isPhone ? ' cc2-fs--phone' : '')}>
 
         {/* ---- Topbar ---- */}
         <div className="cc2-recipe-fs-topbar">

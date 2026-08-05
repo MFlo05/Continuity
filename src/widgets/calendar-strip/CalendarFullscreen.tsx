@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { Platform } from 'obsidian';
 import type { App } from 'obsidian';
 import { useCalendar } from '../../calendar/CalendarContext';
 import { useMergedEvents } from '../../calendar/useMergedEvents';
@@ -102,6 +103,9 @@ export function CalendarFullScreen({ onClose, initialDate, initialView, onOpenMo
   const [selDate,     setSelDate]     = useState(initialDate);
   const [miniYear,    setMiniYear]    = useState(initialDate.getFullYear());
   const [miniMonth,   setMiniMonth]   = useState(initialDate.getMonth());
+  // Collapsed by default on a phone, open everywhere else — 200px of sidebar
+  // is comfortable on a desktop and over half the width of an iPhone.
+  const [sidebarOpen, setSidebarOpen] = useState(!Platform.isPhone);
 
   const weekStart = startOfWeek(selDate);
 
@@ -185,7 +189,7 @@ export function CalendarFullScreen({ onClose, initialDate, initialView, onOpenMo
 
   return createPortal(
     <div className="cc2-cal-fs-backdrop" data-tone={tone} data-wash={wash || undefined}>
-      <div className="cc2-cal-fs">
+      <div className={'cc2-cal-fs' + (Platform.isPhone ? ' cc2-fs--phone' : '')}>
 
         {/* Topbar */}
         <div className="cc2-cal-fs-topbar">
@@ -194,6 +198,23 @@ export function CalendarFullScreen({ onClose, initialDate, initialView, onOpenMo
               <path d="M5 1H1v4M9 1h4v4M13 9v4H9M1 9v4h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
             <span>Exit</span>
+          </button>
+
+          {/* Sidebar toggle. The mini-month, upcoming list and legend cost 200px
+              of a 390px screen — more than half the width for context, leaving
+              the day/week grid unreadable. Starts collapsed on a phone and is
+              always available so the sidebar is a deliberate visit, not a tax. */}
+          <button
+            className={'cc2-flush-btn cc2-cal-fs-side-toggle' + (sidebarOpen ? ' active' : '')}
+            onClick={() => setSidebarOpen(o => !o)}
+            title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+            aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+            aria-pressed={sidebarOpen}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M9 4v16" />
+            </svg>
           </button>
 
           <div className="cc2-cal-fs-nav-pill">
@@ -225,6 +246,7 @@ export function CalendarFullScreen({ onClose, initialDate, initialView, onOpenMo
         <div className="cc2-cal-fs-body">
 
           {/* Sidebar */}
+          {sidebarOpen && (
           <div className="cc2-cal-fs-sidebar">
             <MiniMonth
               year={miniYear} month={miniMonth} selectedDate={selDate}
@@ -237,6 +259,7 @@ export function CalendarFullScreen({ onClose, initialDate, initialView, onOpenMo
               <CalendarLegend entries={legend} />
             </div>
           </div>
+          )}
 
           {/* Main area */}
           <div className="cc2-cal-fs-main">

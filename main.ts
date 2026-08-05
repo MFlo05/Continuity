@@ -5,6 +5,9 @@ import { App as DashboardApp } from "./src/app";
 import { ClassPageContent } from "./src/widgets/my-classes/ClassPageContent";
 import { AIProvider } from "./src/ai/AIContext";
 import { setAssetUrl } from "./src/ai/asset-utils";
+import claudeMark from "./assets/claude-mark.png";
+import geminiMark from "./assets/gemini-mark.png";
+import openaiMark from "./assets/openai-mark.png";
 import { DEFAULT_PAGES } from "./src/defaults";
 import type { PageLayout, MITState } from "./src/types";
 import type { GoogleTokens, TokenStore } from "./src/calendar/google-oauth";
@@ -248,12 +251,23 @@ export default class CC2Plugin extends Plugin {
     this.addSettingTab(new CC2SettingTab(this.app, this));
     this.trackRootFolderRename();
 
-    // Register brand mark assets for AI panel provider logos, plus the
-    // Income & Expense Tracker's burning-cash GIF and coin-drop sprite (same
-    // resourcePath trick — a relative CSS url() has no base path from an
-    // injected <style> tag).
+    // AI provider marks are compiled into the bundle as data URIs (esbuild's
+    // dataurl loader — see esbuild.config.mjs). They have to be: BRAT installs
+    // only main.js/manifest.json/styles.css, so assets/ simply doesn't exist on
+    // a phone and the resourcePath below would point at nothing. Embedding is
+    // also why they were re-exported at 96x96 — the originals were up to
+    // 3840x3840 for a 20px icon.
+    setAssetUrl('claude-mark.png', claudeMark);
+    setAssetUrl('gemini-mark.png', geminiMark);
+    setAssetUrl('openai-mark.png', openaiMark);
+
+    // The Income & Expense Tracker's burning-cash GIF and coin-drop sprite stay
+    // on disk (a relative CSS url() has no base path from an injected <style>
+    // tag, hence the resourcePath trick). Desktop-only as a result: the GIF is
+    // animated and the sprite's frame offsets are tied to its pixel width, so
+    // neither survives the re-export that made embedding cheap for the marks.
     const adapter = this.app.vault.adapter as any;
-    for (const name of ['claude-mark.png', 'gemini-mark.png', 'openai-mark.png', 'burning_money.gif', 'coin-drop.png'] as const) {
+    for (const name of ['burning_money.gif', 'coin-drop.png'] as const) {
       setAssetUrl(name, adapter.getResourcePath(`${this.manifest.dir}/assets/${name}`));
     }
 

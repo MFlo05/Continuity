@@ -1,4 +1,4 @@
-import { App, Plugin, WorkspaceLeaf, ItemView, ViewStateResult, FileSystemAdapter, TFolder } from "obsidian";
+import { App, Plugin, WorkspaceLeaf, ItemView, ViewStateResult, FileSystemAdapter, TFolder, Platform } from "obsidian";
 import { Root, createRoot } from "react-dom/client";
 import { createElement } from "react";
 import { App as DashboardApp } from "./src/app";
@@ -314,15 +314,36 @@ export default class CC2Plugin extends Plugin {
     await this.savePluginData();
   }
 
+  // Desktop opens the dashboard in the right sidebar, where it reads as a
+  // companion panel beside a note. Mobile must not: Obsidian renders both
+  // sidebars as drawer overlays there, which are capped well short of the
+  // screen width — the dashboard came out as a ~20% strip in portrait and
+  // ~40% in landscape, with the note still showing beside it. A phone has no
+  // room for a companion panel anyway, so it gets the main workspace area.
   async activateView(): Promise<void> {
     const { workspace } = this.app;
     const leaves = workspace.getLeavesOfType(VIEW_TYPE);
-    let leaf: WorkspaceLeaf | null = leaves.length > 0
-      ? leaves[0]
-      : workspace.getRightLeaf(false);
 
-    await leaf?.setViewState({ type: VIEW_TYPE, active: true });
-    if (leaf) workspace.revealLeaf(leaf);
+    if (!Platform.isMobile) {
+      const leaf = leaves[0] ?? workspace.getRightLeaf(false);
+      await leaf?.setViewState({ type: VIEW_TYPE, active: true });
+      if (leaf) workspace.revealLeaf(leaf);
+      return;
+    }
+
+    // A leaf parked in a sidebar by an earlier session — or inherited from the
+    // desktop layout through a synced workspace.json — renders as a drawer no
+    // matter what we do to it here. Reusing it is what makes the strip
+    // persist, so find a main-area leaf and drop the sidebar ones entirely
+    // rather than leaving a second live dashboard mounted off-screen.
+    let leaf = leaves.find(l => l.getRoot() === workspace.rootSplit) ?? null;
+    if (!leaf) {
+      leaves.forEach(l => l.detach());
+      leaf = workspace.getLeaf("tab");
+    }
+
+    await leaf.setViewState({ type: VIEW_TYPE, active: true });
+    workspace.revealLeaf(leaf);
   }
 
   // One shared tab, reused across every class (not one per class) — opening
